@@ -1,72 +1,176 @@
-import json
-import os
-
-RUTA_CARPETA = "app/data/storage"
-RUTA_ARCHIVO = os.path.join(RUTA_CARPETA, "disenos.json")
+from app.database.conexion import obtener_conexion
 
 
-def _asegurar_storage():
-    os.makedirs(RUTA_CARPETA, exist_ok=True)
-    if not os.path.exists(RUTA_ARCHIVO):
-        with open(RUTA_ARCHIVO, "w", encoding="utf-8") as f:
-            json.dump([], f, indent=4, ensure_ascii=False)
+def _fila_a_diccionario(fila):
+    return {
+        "id_diseno": fila[0],
+        "id_orden": fila[1],
+        "fecha_creacion": fila[2],
+        "nombre_cliente": fila[3],
+        "producto_material": fila[4],
+        "descripcion": fila[5],
+        "estado_diseno": fila[6],
+        "fecha_envio_cliente": fila[7],
+        "fecha_aprobacion": fila[8],
+        "numero_correcciones": fila[9],
+        "observaciones": fila[10],
+        "activo": bool(fila[11]),
+    }
 
 
 def cargar_disenos():
-    _asegurar_storage()
-    with open(RUTA_ARCHIVO, "r", encoding="utf-8") as f:
-        try:
-            return json.load(f)
-        except json.JSONDecodeError:
-            return []
+    conexion = obtener_conexion()
+    cursor = conexion.cursor()
 
+    cursor.execute("""
+        SELECT id_diseno, id_orden, fecha_creacion, nombre_cliente,
+               producto_material, descripcion, estado_diseno,
+               fecha_envio_cliente, fecha_aprobacion, numero_correcciones,
+               observaciones, activo
+        FROM disenos
+    """)
 
-def guardar_disenos(disenos):
-    _asegurar_storage()
-    with open(RUTA_ARCHIVO, "w", encoding="utf-8") as f:
-        json.dump(disenos, f, indent=4, ensure_ascii=False)
+    disenos = [_fila_a_diccionario(fila) for fila in cursor.fetchall()]
+    conexion.close()
+
+    return disenos
 
 
 def generar_id_diseno():
-    disenos = cargar_disenos()
-    if not disenos:
-        return 1
-    return max(d.get("id_diseno", 0) for d in disenos) + 1
+    conexion = obtener_conexion()
+    cursor = conexion.cursor()
+
+    cursor.execute("SELECT MAX(id_diseno) FROM disenos")
+    ultimo_id = cursor.fetchone()[0]
+
+    conexion.close()
+
+    return 1 if ultimo_id is None else ultimo_id + 1
 
 
 def agregar_diseno(diseno):
-    disenos = cargar_disenos()
-    disenos.append(diseno)
-    guardar_disenos(disenos)
+    conexion = obtener_conexion()
+    cursor = conexion.cursor()
+
+    cursor.execute("""
+        INSERT INTO disenos (
+            id_diseno, id_orden, fecha_creacion, nombre_cliente,
+            producto_material, descripcion, estado_diseno,
+            fecha_envio_cliente, fecha_aprobacion, numero_correcciones,
+            observaciones, activo
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    """, (
+        diseno.get("id_diseno"),
+        diseno.get("id_orden"),
+        diseno.get("fecha_creacion"),
+        diseno.get("nombre_cliente"),
+        diseno.get("producto_material"),
+        diseno.get("descripcion"),
+        diseno.get("estado_diseno", "Pendiente"),
+        diseno.get("fecha_envio_cliente"),
+        diseno.get("fecha_aprobacion"),
+        diseno.get("numero_correcciones", 0),
+        diseno.get("observaciones", ""),
+        1 if diseno.get("activo", True) else 0,
+    ))
+
+    conexion.commit()
+    conexion.close()
 
 
 def obtener_diseno_por_orden(id_orden):
-    for d in cargar_disenos():
-        if d.get("id_orden") == id_orden and d.get("activo", True):
-            return d
-    return None
+    conexion = obtener_conexion()
+    cursor = conexion.cursor()
+
+    cursor.execute("""
+        SELECT id_diseno, id_orden, fecha_creacion, nombre_cliente,
+               producto_material, descripcion, estado_diseno,
+               fecha_envio_cliente, fecha_aprobacion, numero_correcciones,
+               observaciones, activo
+        FROM disenos
+        WHERE id_orden = ?
+        AND activo = 1
+    """, (id_orden,))
+
+    fila = cursor.fetchone()
+    conexion.close()
+
+    return _fila_a_diccionario(fila) if fila else None
 
 
 def obtener_diseno_por_id(id_diseno):
-    for d in cargar_disenos():
-        if d.get("id_diseno") == id_diseno:
-            return d
-    return None
+    conexion = obtener_conexion()
+    cursor = conexion.cursor()
+
+    cursor.execute("""
+        SELECT id_diseno, id_orden, fecha_creacion, nombre_cliente,
+               producto_material, descripcion, estado_diseno,
+               fecha_envio_cliente, fecha_aprobacion, numero_correcciones,
+               observaciones, activo
+        FROM disenos
+        WHERE id_diseno = ?
+    """, (id_diseno,))
+
+    fila = cursor.fetchone()
+    conexion.close()
+
+    return _fila_a_diccionario(fila) if fila else None
 
 
 def actualizar_diseno(id_diseno, datos_actualizados):
-    disenos = cargar_disenos()
-    for d in disenos:
-        if d.get("id_diseno") == id_diseno:
-            d.update(datos_actualizados)
-            guardar_disenos(disenos)
-            return True
-    return False
+    if not datos_actualizados:
+        return False
+
+    campos = []
+    valores = []
+
+    for campo, valor in datos_actualizados.items():
+        campos.append(f"{campo} = ?")
+        valores.append(valor)
+
+    valores.append(id_diseno)
+
+    conexion = obtener_conexion()
+    cursor = conexion.cursor()
+
+    cursor.execute(f"""
+        UPDATE disenos
+        SET {", ".join(campos)}
+        WHERE id_diseno = ?
+    """, valores)
+
+    conexion.commit()
+    actualizado = cursor.rowcount > 0
+    conexion.close()
+
+    return actualizado
 
 
 def listar_disenos_activos_data():
-    return [d for d in cargar_disenos() if d.get("activo", True)]
+    conexion = obtener_conexion()
+    cursor = conexion.cursor()
+
+    cursor.execute("""
+        SELECT id_diseno, id_orden, fecha_creacion, nombre_cliente,
+               producto_material, descripcion, estado_diseno,
+               fecha_envio_cliente, fecha_aprobacion, numero_correcciones,
+               observaciones, activo
+        FROM disenos
+        WHERE activo = 1
+    """)
+
+    disenos = [_fila_a_diccionario(fila) for fila in cursor.fetchall()]
+    conexion.close()
+
+    return disenos
 
 
 def cancelar_diseno_data(id_diseno):
-    return actualizar_diseno(id_diseno, {"estado_diseno": "Cancelado", "activo": False})
+    return actualizar_diseno(
+        id_diseno,
+        {
+            "estado_diseno": "Cancelado",
+            "activo": 0
+        }
+    )
