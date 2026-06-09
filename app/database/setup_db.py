@@ -6,14 +6,18 @@ def crear_tablas():
     cursor = conexion.cursor()
 
     cursor.execute("""
-        CREATE TABLE IF NOT EXISTS clientes (
-            id_cliente INTEGER PRIMARY KEY,
-            nombre TEXT NOT NULL,
-            telefono TEXT,
-            email TEXT,
-            activo INTEGER DEFAULT 1
-        )
-    """)
+    CREATE TABLE IF NOT EXISTS clientes (
+        id_cliente INTEGER PRIMARY KEY,
+        nombre TEXT NOT NULL,
+        empresa TEXT,
+        telefono TEXT,
+        correo TEXT,
+        direccion TEXT,
+        fecha_alta TEXT,
+        observaciones TEXT,
+        activo INTEGER DEFAULT 1
+    )
+""")
 
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS cotizaciones (
