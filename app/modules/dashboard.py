@@ -67,8 +67,35 @@ def ver_entregas_proximas():
 
     input("\nPresiona Enter para continuar...")
 
-
 def ver_pagos_pendientes():
+    ordenes = cargar_ordenes()
+
     print("\n=== PAGOS PENDIENTES ===")
-    print("Módulo funcionando.")
+
+    hay_pendientes = False
+
+    for orden in ordenes:
+        if not _es_activo(orden):
+            continue
+
+        saldo = orden.get("saldo_pendiente", 0)
+
+        if saldo > 0:
+            hay_pendientes = True
+
+            print(f"\nOrden: {orden.get('id_orden')}")
+            print(f"Cliente: {orden.get('nombre_cliente')}")
+            print(
+                f"Anticipo requerido: "
+                f"${orden.get('anticipo_requerido', 0):,.2f}"
+            )
+            print(
+                f"Anticipo pagado: "
+                f"${orden.get('anticipo_pagado', 0):,.2f}"
+            )
+            print(f"Saldo pendiente: ${saldo:,.2f}")
+
+    if not hay_pendientes:
+        print("No hay pagos pendientes.")
+
     input("\nPresiona Enter para continuar...")
