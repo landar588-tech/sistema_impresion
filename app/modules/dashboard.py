@@ -31,8 +31,40 @@ def ver_dashboard_general():
 
     input("\nPresiona Enter para continuar...")
 def ver_entregas_proximas():
+    ordenes = cargar_ordenes()
+
+    hoy = datetime.now().date()
+    limite = hoy + timedelta(days=7)
+
     print("\n=== ENTREGAS PRÓXIMAS ===")
-    print("Módulo funcionando.")
+
+    hay_entregas = False
+
+    for orden in ordenes:
+        if not _es_activo(orden):
+            continue
+
+        fecha_str = orden.get("fecha_estimada_entrega")
+
+        if not fecha_str:
+            continue
+
+        fecha_entrega = datetime.strptime(
+            fecha_str,
+            "%Y-%m-%d"
+        ).date()
+
+        if hoy <= fecha_entrega <= limite:
+            hay_entregas = True
+
+            print(f"\nOrden: {orden.get('id_orden')}")
+            print(f"Cliente: {orden.get('nombre_cliente')}")
+            print(f"Entrega: {fecha_str}")
+            print(f"Estado: {orden.get('estado')}")
+
+    if not hay_entregas:
+        print("No hay entregas próximas.")
+
     input("\nPresiona Enter para continuar...")
 
 
