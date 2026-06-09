@@ -96,6 +96,67 @@ def ver_pagos_pendientes():
             print(f"Anticipo requerido: ${float(orden.get('anticipo_requerido', 0) or 0):,.2f}")
             print(f"Anticipo pagado: ${float(orden.get('anticipo_pagado', 0) or 0):,.2f}")
             print(f"Saldo pendiente: ${saldo:,.2f}")
+        
+def obtener_resumen_dashboard():
+    clientes = cargar_clientes()
+    cotizaciones = cargar_cotizaciones()
+    ordenes = cargar_ordenes()
+    disenos = cargar_disenos()
+    produccion = cargar_produccion()
+    pagos = cargar_pagos()
+
+    total_ingresos = sum(
+        float(p.get("monto", 0) or 0)
+        for p in pagos
+        if _es_activo(p)
+    )
+
+    saldo_pendiente = sum(
+        float(o.get("saldo_pendiente", 0) or 0)
+        for o in ordenes
+        if _es_activo(o)
+    )
+
+    return {
+        "clientes_activos": sum(1 for c in clientes if _es_activo(c)),
+        "cotizaciones_activas": sum(1 for c in cotizaciones if _es_activo(c)),
+        "ordenes_activas": sum(1 for o in ordenes if _es_activo(o)),
+        "disenos_activos": sum(1 for d in disenos if _es_activo(d)),
+        "produccion_activa": sum(1 for p in produccion if _es_activo(p)),
+        "pagos_registrados": sum(1 for p in pagos if _es_activo(p)),
+        "ingresos_registrados": total_ingresos,
+        "saldo_pendiente": saldo_pendiente,
+    }
+    return {
+        "clientes_activos": sum(1 for c in clientes if _es_activo(c)),
+        "cotizaciones_activas": sum(1 for c in cotizaciones if _es_activo(c)),
+        "ordenes_activas": sum(1 for o in ordenes if _es_activo(o)),
+        "disenos_activos": sum(1 for d in disenos if _es_activo(d)),
+        "produccion_activa": sum(1 for p in produccion if _es_activo(p)),
+        "pagos_registrados": sum(1 for p in pagos if _es_activo(p)),
+        "ingresos_registrados": total_ingresos,
+        "saldo_pendiente": saldo_pendiente,
+    }
+    clientes = cargar_clientes()
+    cotizaciones = cargar_cotizaciones()
+    ordenes = cargar_ordenes()
+    disenos = cargar_disenos()
+    produccion = cargar_produccion()
+    pagos = cargar_pagos()
+
+    total_ingresos = sum(float(p.get("monto", 0) or 0) for p in pagos if _es_activo(p))
+    saldo_pendiente = sum(float(o.get("saldo_pendiente", 0) or 0) for o in ordenes if _es_activo(o))
+
+    return {
+        "clientes_activos": sum(1 for c in clientes if _es_activo(c)),
+        "cotizaciones_activas": sum(1 for c in cotizaciones if _es_activo(c)),
+        "ordenes_activas": sum(1 for o in ordenes if _es_activo(o)),
+        "disenos_activos": sum(1 for d in disenos if _es_activo(d)),
+        "produccion_activa": sum(1 for p in produccion if _es_activo(p)),
+        "pagos_registrados": sum(1 for p in pagos if _es_activo(p)),
+        "ingresos_registrados": total_ingresos,
+        "saldo_pendiente": saldo_pendiente,
+    }
 
     if not hay_pendientes:
         print("No hay pagos pendientes.")
