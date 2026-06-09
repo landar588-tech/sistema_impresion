@@ -1,48 +1,80 @@
-import json
-import os
+from app.database.conexion import obtener_conexion
 
-RUTA_PAGOS = "app/data/storage/pagos.json"
+
+def _fila_a_diccionario(fila):
+    return {
+        "id_pago": fila[0],
+        "id_orden": fila[1],
+        "monto": fila[2],
+        "metodo_pago": fila[3],
+        "fecha_pago": fila[4],
+        "estado_pago": fila[5],
+        "activo": bool(fila[6]),
+    }
 
 
 def cargar_pagos():
-    if not os.path.exists(RUTA_PAGOS):
-        return []
+    conexion = obtener_conexion()
+    cursor = conexion.cursor()
 
-    with open(RUTA_PAGOS, "r", encoding="utf-8") as archivo:
-        return json.load(archivo)
+    cursor.execute("""
+        SELECT id_pago, id_orden, monto, metodo_pago,
+               fecha_pago, estado_pago, activo
+        FROM pagos
+    """)
 
+    pagos = [_fila_a_diccionario(fila) for fila in cursor.fetchall()]
+    conexion.close()
 
-def guardar_pagos(pagos):
-    with open(RUTA_PAGOS, "w", encoding="utf-8") as archivo:
-        json.dump(pagos, archivo, indent=4, ensure_ascii=False)
+    return pagos
 
 
 def generar_id_pago():
-    pagos = cargar_pagos()
+    conexion = obtener_conexion()
+    cursor = conexion.cursor()
 
-    if not pagos:
-        return 1
+    cursor.execute("SELECT MAX(id_pago) FROM pagos")
+    ultimo_id = cursor.fetchone()[0]
 
-    return max(p["id_pago"] for p in pagos) + 1
+    conexion.close()
+
+    return 1 if ultimo_id is None else ultimo_id + 1
 
 
 def crear_pago(id_orden, monto, metodo_pago, fecha_pago, estado_pago="Pagado"):
-    pagos = cargar_pagos()
+    conexion = obtener_conexion()
+    cursor = conexion.cursor()
 
-    nuevo_pago = {
-        "id_pago": generar_id_pago(),
+    id_pago = generar_id_pago()
+
+    cursor.execute("""
+        INSERT INTO pagos (
+            id_pago, id_orden, monto, metodo_pago,
+            fecha_pago, estado_pago, activo
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+    """, (
+        id_pago,
+        id_orden,
+        monto,
+        metodo_pago,
+        fecha_pago,
+        estado_pago,
+        1
+    ))
+
+    conexion.commit()
+    conexion.close()
+
+    return {
+        "id_pago": id_pago,
         "id_orden": id_orden,
         "monto": monto,
         "metodo_pago": metodo_pago,
         "fecha_pago": fecha_pago,
         "estado_pago": estado_pago,
-        "activo": True
+        "activo": True,
     }
-
-    pagos.append(nuevo_pago)
-    guardar_pagos(pagos)
-
-    return nuevo_pago
 
 
 def listar_pagos():
@@ -50,35 +82,90 @@ def listar_pagos():
 
 
 def listar_pagos_activos():
-    return [p for p in cargar_pagos() if p.get("activo")]
+    conexion = obtener_conexion()
+    cursor = conexion.cursor()
+
+    cursor.execute("""
+        SELECT id_pago, id_orden, monto, metodo_pago,
+               fecha_pago, estado_pago, activo
+        FROM pagos
+        WHERE activo = 1
+    """)
+
+    pagos = [_fila_a_diccionario(fila) for fila in cursor.fetchall()]
+    conexion.close()
+
+    return pagos
 
 
 def obtener_pago_por_id(id_pago):
-    for p in cargar_pagos():
-        if p.get("id_pago") == id_pago:
-            return p
+    conexion = obtener_conexion()
+    cursor = conexion.cursor()
 
-    return None
+    cursor.execute("""
+        SELECT id_pago, id_orden, monto, metodo_pago,
+               fecha_pago, estado_pago, activo
+        FROM pagos
+        WHERE id_pago = ?
+    """, (id_pago,))
+
+    fila = cursor.fetchone()
+    conexion.close()
+
+    return _fila_a_diccionario(fila) if fila else None
 
 
 def obtener_pagos_por_orden(id_orden):
-    return [p for p in cargar_pagos() if p.get("id_orden") == id_orden]
+    conexion = obtener_conexion()
+    cursor = conexion.cursor()
+
+    cursor.execute("""
+        SELECT id_pago, id_orden, monto, metodo_pago,
+               fecha_pago, estado_pago, activo
+        FROM pagos
+        WHERE id_orden = ?
+    """, (id_orden,))
+
+    pagos = [_fila_a_diccionario(fila) for fila in cursor.fetchall()]
+    conexion.close()
+
+    return pagos
 
 
 def actualizar_pago(id_pago, datos_actualizados):
-    pagos = cargar_pagos()
+    if not datos_actualizados:
+        return False
 
-    for p in pagos:
-        if p.get("id_pago") == id_pago:
-            p.update(datos_actualizados)
-            guardar_pagos(pagos)
-            return True
+    campos = []
+    valores = []
 
-    return False
+    for campo, valor in datos_actualizados.items():
+        campos.append(f"{campo} = ?")
+        valores.append(valor)
+
+    valores.append(id_pago)
+
+    conexion = obtener_conexion()
+    cursor = conexion.cursor()
+
+    cursor.execute(f"""
+        UPDATE pagos
+        SET {", ".join(campos)}
+        WHERE id_pago = ?
+    """, valores)
+
+    conexion.commit()
+    actualizado = cursor.rowcount > 0
+    conexion.close()
+
+    return actualizado
 
 
 def cancelar_pago(id_pago):
     return actualizar_pago(
         id_pago,
-        {"estado_pago": "Cancelado", "activo": False}
+        {
+            "estado_pago": "Cancelado",
+            "activo": 0
+        }
     )

@@ -21,10 +21,22 @@ def crear_tablas():
         )
     """)
 
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS pagos (
+            id_pago INTEGER PRIMARY KEY,
+            id_orden INTEGER,
+            monto REAL,
+            metodo_pago TEXT,
+            fecha_pago TEXT,
+            estado_pago TEXT,
+            activo INTEGER DEFAULT 1
+        )
+    """)
+
     conexion.commit()
     conexion.close()
 
-    print("Tabla produccion creada correctamente.")
+    print("Tablas produccion y pagos creadas correctamente.")
 
 
 if __name__ == "__main__":
