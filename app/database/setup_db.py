@@ -67,8 +67,27 @@ def crear_tablas():
         )
     """)
 
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS disenos (
+        id_diseno INTEGER PRIMARY KEY,
+        id_orden INTEGER,
+        fecha_creacion TEXT,
+        nombre_cliente TEXT,
+        producto_material TEXT,
+        descripcion TEXT,
+        estado_diseno TEXT,
+        fecha_envio_cliente TEXT,
+        fecha_aprobacion TEXT,
+        numero_correcciones INTEGER DEFAULT 0,
+        observaciones TEXT,
+        activo INTEGER DEFAULT 1
+    )
+""")
+
     conexion.commit()
     conexion.close()
+
+  
 
     print("Base de datos y tablas creadas correctamente.")
 

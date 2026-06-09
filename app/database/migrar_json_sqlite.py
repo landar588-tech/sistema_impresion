@@ -2,6 +2,7 @@ from app.data.clientes import cargar_clientes
 from app.data.cotizaciones import cargar_cotizaciones
 from app.data.ordenes import cargar_ordenes
 from app.database.conexion import obtener_conexion
+from app.data.diseno import cargar_disenos
 
 def migrar_clientes(cursor):
     for cliente in cargar_clientes():
@@ -125,6 +126,38 @@ def migrar_ordenes(cursor):
             1 if orden.get("activo", True) else 0
         ))
 
+def migrar_disenos(cursor):
+    for diseno in cargar_disenos():
+        cursor.execute("""
+            INSERT OR REPLACE INTO disenos (
+                id_diseno,
+                id_orden,
+                fecha_creacion,
+                nombre_cliente,
+                producto_material,
+                descripcion,
+                estado_diseno,
+                fecha_envio_cliente,
+                fecha_aprobacion,
+                numero_correcciones,
+                observaciones,
+                activo
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (
+            diseno.get("id_diseno"),
+            diseno.get("id_orden"),
+            diseno.get("fecha_creacion"),
+            diseno.get("nombre_cliente"),
+            diseno.get("producto_material"),
+            diseno.get("descripcion"),
+            diseno.get("estado_diseno"),
+            diseno.get("fecha_envio_cliente"),
+            diseno.get("fecha_aprobacion"),
+            diseno.get("numero_correcciones", 0),
+            diseno.get("observaciones"),
+            1 if diseno.get("activo", True) else 0
+        ))
 
 def migrar_json_a_sqlite():
     conexion = obtener_conexion()
@@ -133,6 +166,7 @@ def migrar_json_a_sqlite():
     migrar_clientes(cursor)
     migrar_cotizaciones(cursor)
     migrar_ordenes(cursor)
+    migrar_disenos(cursor)
 
     conexion.commit()
     conexion.close()

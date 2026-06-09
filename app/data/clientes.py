@@ -1,80 +1,153 @@
-import json
-import os
-
-RUTA_CARPETA = "app/data/storage"
-RUTA_ARCHIVO = os.path.join(RUTA_CARPETA, "clientes.json")
+from app.database.conexion import obtener_conexion
 
 
-def _asegurar_storage():
-    os.makedirs(RUTA_CARPETA, exist_ok=True)
-    if not os.path.exists(RUTA_ARCHIVO):
-        with open(RUTA_ARCHIVO, "w", encoding="utf-8") as f:
-            json.dump([], f, indent=4, ensure_ascii=False)
+def _fila_a_diccionario(fila):
+    return {
+        "id_cliente": fila[0],
+        "nombre": fila[1],
+        "empresa": fila[2],
+        "telefono": fila[3],
+        "correo": fila[4],
+        "direccion": fila[5],
+        "fecha_alta": fila[6],
+        "observaciones": fila[7],
+        "activo": bool(fila[8]),
+    }
 
 
 def cargar_clientes():
-    _asegurar_storage()
-    with open(RUTA_ARCHIVO, "r", encoding="utf-8") as f:
-        try:
-            return json.load(f)
-        except json.JSONDecodeError:
-            return []
-def guardar_clientes(clientes):
-    _asegurar_storage()
-    with open(RUTA_ARCHIVO, "w", encoding="utf-8") as f:
-        json.dump(clientes, f, indent=4, ensure_ascii=False)
+    conexion = obtener_conexion()
+    cursor = conexion.cursor()
+
+    cursor.execute("""
+        SELECT id_cliente, nombre, empresa, telefono, correo, direccion,
+               fecha_alta, observaciones, activo
+        FROM clientes
+    """)
+
+    clientes = [_fila_a_diccionario(fila) for fila in cursor.fetchall()]
+    conexion.close()
+    return clientes
 
 
 def generar_id_cliente():
-    clientes = cargar_clientes()
-    if not clientes:
-        return 1
-    return max(c.get("id_cliente", 0) for c in clientes) + 1
+    conexion = obtener_conexion()
+    cursor = conexion.cursor()
+
+    cursor.execute("SELECT MAX(id_cliente) FROM clientes")
+    ultimo_id = cursor.fetchone()[0]
+
+    conexion.close()
+    return 1 if ultimo_id is None else ultimo_id + 1
 
 
 def agregar_cliente(cliente):
-    clientes = cargar_clientes()
-    clientes.append(cliente)
-    guardar_clientes(clientes)
+    conexion = obtener_conexion()
+    cursor = conexion.cursor()
+
+    cursor.execute("""
+        INSERT INTO clientes (
+            id_cliente, nombre, empresa, telefono, correo,
+            direccion, fecha_alta, observaciones, activo
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    """, (
+        cliente["id_cliente"],
+        cliente["nombre"],
+        cliente.get("empresa", ""),
+        cliente["telefono"],
+        cliente.get("correo", ""),
+        cliente.get("direccion", ""),
+        cliente.get("fecha_alta", ""),
+        cliente.get("observaciones", ""),
+        1 if cliente.get("activo", True) else 0,
+    ))
+
+    conexion.commit()
+    conexion.close()
 
 
 def obtener_cliente_por_id(id_cliente):
-    clientes = cargar_clientes()
-    for c in clientes:
-        if c.get("id_cliente") == id_cliente:
-            return c
-    return None
+    conexion = obtener_conexion()
+    cursor = conexion.cursor()
+
+    cursor.execute("""
+        SELECT id_cliente, nombre, empresa, telefono, correo, direccion,
+               fecha_alta, observaciones, activo
+        FROM clientes
+        WHERE id_cliente = ?
+    """, (id_cliente,))
+
+    fila = cursor.fetchone()
+    conexion.close()
+
+    return _fila_a_diccionario(fila) if fila else None
 
 
 def buscar_clientes(texto):
-    texto = texto.lower()
-    clientes = cargar_clientes()
-    return [
-        c for c in clientes
-        if c.get("activo", True)
-        and (
-            texto in c.get("nombre", "").lower()
-            or texto in c.get("empresa", "").lower()
-            or texto in c.get("telefono", "").lower()
+    conexion = obtener_conexion()
+    cursor = conexion.cursor()
+
+    texto = f"%{texto.lower()}%"
+
+    cursor.execute("""
+        SELECT id_cliente, nombre, empresa, telefono, correo, direccion,
+               fecha_alta, observaciones, activo
+        FROM clientes
+        WHERE activo = 1
+        AND (
+            LOWER(nombre) LIKE ?
+            OR LOWER(empresa) LIKE ?
+            OR LOWER(telefono) LIKE ?
         )
-    ]
+    """, (texto, texto, texto))
+
+    clientes = [_fila_a_diccionario(fila) for fila in cursor.fetchall()]
+    conexion.close()
+    return clientes
 
 
 def actualizar_cliente(id_cliente, datos_actualizados):
-    clientes = cargar_clientes()
-    for c in clientes:
-        if c.get("id_cliente") == id_cliente:
-            c.update(datos_actualizados)
-            guardar_clientes(clientes)
-            return True
-    return False
+    if not datos_actualizados:
+        return False
+
+    campos = []
+    valores = []
+
+    for campo, valor in datos_actualizados.items():
+        campos.append(f"{campo} = ?")
+        valores.append(valor)
+
+    valores.append(id_cliente)
+
+    conexion = obtener_conexion()
+    cursor = conexion.cursor()
+
+    cursor.execute(f"""
+        UPDATE clientes
+        SET {", ".join(campos)}
+        WHERE id_cliente = ?
+    """, valores)
+
+    conexion.commit()
+    actualizado = cursor.rowcount > 0
+    conexion.close()
+
+    return actualizado
 
 
 def desactivar_cliente(id_cliente):
-    clientes = cargar_clientes()
-    for c in clientes:
-        if c.get("id_cliente") == id_cliente:
-            c["activo"] = False
-            guardar_clientes(clientes)
-            return True
-    return False
+    conexion = obtener_conexion()
+    cursor = conexion.cursor()
+
+    cursor.execute("""
+        UPDATE clientes
+        SET activo = 0
+        WHERE id_cliente = ?
+    """, (id_cliente,))
+
+    conexion.commit()
+    actualizado = cursor.rowcount > 0
+    conexion.close()
+
+    return actualizado
