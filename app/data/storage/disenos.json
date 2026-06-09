@@ -1,0 +1,16 @@
+[
+    {
+        "id_diseno": 1,
+        "id_orden": 1,
+        "fecha_creacion": "2026-06-09 01:15:45",
+        "nombre_cliente": "Ricardo Landa",
+        "producto_material": "Tarjetas de presentacion",
+        "descripcion": "tarjetas a color",
+        "estado_diseno": "Diseño en proceso",
+        "fecha_envio_cliente": "",
+        "fecha_aprobacion": "",
+        "numero_correcciones": 0,
+        "observaciones": "",
+        "activo": true
+    }
+]
