@@ -30,8 +30,9 @@ def ver_dashboard_general():
     print(f"Pagos registrados: {sum(1 for p in pagos if _es_activo(p))}")
 
     input("\nPresiona Enter para continuar...")
+    
 def ver_entregas_proximas():
-    ordenes = cargar_ordenes()
+    ordenes = obtener_ordenes()
 
     hoy = datetime.now().date()
     limite = hoy + timedelta(days=7)
@@ -68,7 +69,7 @@ def ver_entregas_proximas():
     input("\nPresiona Enter para continuar...")
 
 def ver_pagos_pendientes():
-    ordenes = cargar_ordenes()
+    ordenes = obtener_ordenes()
 
     print("\n=== PAGOS PENDIENTES ===")
 
