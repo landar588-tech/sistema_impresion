@@ -1,71 +1,153 @@
-import json
-import os
-
-RUTA_CARPETA = "app/data/storage"
-RUTA_ARCHIVO = os.path.join(RUTA_CARPETA, "cotizaciones.json")
+from app.database.conexion import obtener_conexion
 
 
-def _asegurar_storage():
-    os.makedirs(RUTA_CARPETA, exist_ok=True)
-    if not os.path.exists(RUTA_ARCHIVO):
-        with open(RUTA_ARCHIVO, "w", encoding="utf-8") as f:
-            json.dump([], f, indent=4, ensure_ascii=False)
+def _fila_a_diccionario(fila):
+    return {
+        "id_cotizacion": fila[0],
+        "fecha": fila[1],
+        "id_cliente": fila[2],
+        "nombre_cliente": fila[3],
+        "producto_material": fila[4],
+        "cantidad": fila[5],
+        "descripcion": fila[6],
+        "cliente_trae_diseno": bool(fila[7]),
+        "costo_diseno": fila[8],
+        "costo_produccion": fila[9],
+        "total": fila[10],
+        "anticipo_50": fila[11],
+        "saldo_pendiente": fila[12],
+        "dias_entrega_estimados": fila[13],
+        "estado": fila[14],
+        "observaciones": fila[15],
+        "activo": bool(fila[16]),
+    }
 
 
 def cargar_cotizaciones():
-    _asegurar_storage()
-    with open(RUTA_ARCHIVO, "r", encoding="utf-8") as f:
-        try:
-            return json.load(f)
-        except json.JSONDecodeError:
-            return []
-def guardar_cotizaciones(cotizaciones):
-    _asegurar_storage()
-    with open(RUTA_ARCHIVO, "w", encoding="utf-8") as f:
-        json.dump(cotizaciones, f, indent=4, ensure_ascii=False)
+    conexion = obtener_conexion()
+    cursor = conexion.cursor()
+
+    cursor.execute("""
+        SELECT id_cotizacion, fecha, id_cliente, nombre_cliente,
+               producto_material, cantidad, descripcion,
+               cliente_trae_diseno, costo_diseno, costo_produccion,
+               total, anticipo_50, saldo_pendiente,
+               dias_entrega_estimados, estado, observaciones, activo
+        FROM cotizaciones
+    """)
+
+    cotizaciones = [_fila_a_diccionario(fila) for fila in cursor.fetchall()]
+    conexion.close()
+    return cotizaciones
 
 
 def generar_id_cotizacion():
-    cotizaciones = cargar_cotizaciones()
-    if not cotizaciones:
-        return 1
-    return max(c.get("id_cotizacion", 0) for c in cotizaciones) + 1
+    conexion = obtener_conexion()
+    cursor = conexion.cursor()
+
+    cursor.execute("SELECT MAX(id_cotizacion) FROM cotizaciones")
+    ultimo_id = cursor.fetchone()[0]
+
+    conexion.close()
+    return 1 if ultimo_id is None else ultimo_id + 1
 
 
 def agregar_cotizacion(cotizacion):
-    cotizaciones = cargar_cotizaciones()
-    cotizaciones.append(cotizacion)
-    guardar_cotizaciones(cotizaciones)
+    conexion = obtener_conexion()
+    cursor = conexion.cursor()
+
+    cursor.execute("""
+        INSERT INTO cotizaciones (
+            id_cotizacion, fecha, id_cliente, nombre_cliente,
+            producto_material, cantidad, descripcion,
+            cliente_trae_diseno, costo_diseno, costo_produccion,
+            total, anticipo_50, saldo_pendiente,
+            dias_entrega_estimados, estado, observaciones, activo
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    """, (
+        cotizacion.get("id_cotizacion"),
+        cotizacion.get("fecha"),
+        cotizacion.get("id_cliente"),
+        cotizacion.get("nombre_cliente"),
+        cotizacion.get("producto_material"),
+        cotizacion.get("cantidad"),
+        cotizacion.get("descripcion"),
+        1 if cotizacion.get("cliente_trae_diseno", False) else 0,
+        cotizacion.get("costo_diseno", 0),
+        cotizacion.get("costo_produccion", 0),
+        cotizacion.get("total", 0),
+        cotizacion.get("anticipo_50", 0),
+        cotizacion.get("saldo_pendiente", 0),
+        cotizacion.get("dias_entrega_estimados"),
+        cotizacion.get("estado", "Pendiente"),
+        cotizacion.get("observaciones", ""),
+        1 if cotizacion.get("activo", True) else 0,
+    ))
+
+    conexion.commit()
+    conexion.close()
 
 
 def obtener_cotizacion_por_id(id_cotizacion):
-    cotizaciones = cargar_cotizaciones()
-    for c in cotizaciones:
-        if c.get("id_cotizacion") == id_cotizacion:
-            return c
-    return None
+    conexion = obtener_conexion()
+    cursor = conexion.cursor()
+
+    cursor.execute("""
+        SELECT id_cotizacion, fecha, id_cliente, nombre_cliente,
+               producto_material, cantidad, descripcion,
+               cliente_trae_diseno, costo_diseno, costo_produccion,
+               total, anticipo_50, saldo_pendiente,
+               dias_entrega_estimados, estado, observaciones, activo
+        FROM cotizaciones
+        WHERE id_cotizacion = ?
+    """, (id_cotizacion,))
+
+    fila = cursor.fetchone()
+    conexion.close()
+
+    return _fila_a_diccionario(fila) if fila else None
 
 
 def buscar_cotizaciones(texto):
-    texto = texto.lower()
-    cotizaciones = cargar_cotizaciones()
-    return [
-        c for c in cotizaciones
-        if c.get("activo", True)
-        and (
-            texto in str(c.get("id_cotizacion", "")).lower()
-            or texto in c.get("nombre_cliente", "").lower()
-            or texto in c.get("producto_material", "").lower()
+    conexion = obtener_conexion()
+    cursor = conexion.cursor()
+
+    texto = f"%{texto.lower()}%"
+
+    cursor.execute("""
+        SELECT id_cotizacion, fecha, id_cliente, nombre_cliente,
+               producto_material, cantidad, descripcion,
+               cliente_trae_diseno, costo_diseno, costo_produccion,
+               total, anticipo_50, saldo_pendiente,
+               dias_entrega_estimados, estado, observaciones, activo
+        FROM cotizaciones
+        WHERE activo = 1
+        AND (
+            CAST(id_cotizacion AS TEXT) LIKE ?
+            OR LOWER(nombre_cliente) LIKE ?
+            OR LOWER(producto_material) LIKE ?
         )
-    ]
+    """, (texto, texto, texto))
+
+    cotizaciones = [_fila_a_diccionario(fila) for fila in cursor.fetchall()]
+    conexion.close()
+    return cotizaciones
 
 
 def cancelar_cotizacion(id_cotizacion):
-    cotizaciones = cargar_cotizaciones()
-    for c in cotizaciones:
-        if c.get("id_cotizacion") == id_cotizacion:
-            c["estado"] = "Cancelada"
-            c["activo"] = False
-            guardar_cotizaciones(cotizaciones)
-            return True
-    return False
+    conexion = obtener_conexion()
+    cursor = conexion.cursor()
+
+    cursor.execute("""
+        UPDATE cotizaciones
+        SET estado = 'Cancelada',
+            activo = 0
+        WHERE id_cotizacion = ?
+    """, (id_cotizacion,))
+
+    conexion.commit()
+    actualizado = cursor.rowcount > 0
+    conexion.close()
+
+    return actualizado
