@@ -1,0 +1,13 @@
+[
+    {
+        "id_cliente": 1,
+        "nombre": "Ricardo Landa",
+        "empresa": "Prueba GM7",
+        "telefono": "3338417070",
+        "correo": "landar588@gmail.com",
+        "direccion": "samuel ramos 1543",
+        "fecha_alta": "2026-06-09 00:00:11",
+        "observaciones": "seferino",
+        "activo": true
+    }
+]
