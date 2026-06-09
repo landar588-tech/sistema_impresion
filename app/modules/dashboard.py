@@ -1,11 +1,11 @@
 from datetime import datetime, timedelta
 
-from app.data.clientes import cargar_clientes
-from app.data.cotizaciones import cargar_cotizaciones
-from app.data.ordenes import cargar_ordenes
-from app.data.pagos import cargar_pagos
+from app.database.clientes_db import obtener_clientes
+from app.database.cotizaciones_db import obtener_cotizaciones
+from app.database.ordenes_db import obtener_ordenes
 from app.data.diseno import cargar_disenos
 from app.data.produccion import cargar_produccion
+from app.data.pagos import cargar_pagos
 
 
 def _es_activo(registro):
@@ -13,9 +13,9 @@ def _es_activo(registro):
 
 
 def ver_dashboard_general():
-    clientes = cargar_clientes()
-    cotizaciones = cargar_cotizaciones()
-    ordenes = cargar_ordenes()
+    clientes = obtener_clientes()
+    cotizaciones = obtener_cotizaciones()
+    ordenes = obtener_ordenes()
     disenos = cargar_disenos()
     produccion = cargar_produccion()
     pagos = cargar_pagos()
