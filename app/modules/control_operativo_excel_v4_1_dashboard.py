@@ -26,6 +26,7 @@ Salida:
 ===============================================================================
 """
 
+from datetime import date, timedelta
 from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from openpyxl.chart import PieChart, LineChart, Reference
@@ -35,6 +36,7 @@ from openpyxl.chart.marker import Marker
 from openpyxl.chart.shapes import GraphicalProperties
 from openpyxl.drawing.line import LineProperties
 from openpyxl.utils import get_column_letter
+from openpyxl.workbook.properties import CalcProperties
 
 # Reutilizamos la V4 estable sin modificarla.
 import control_operativo_excel_v4 as v4
@@ -129,6 +131,72 @@ def _kpi_grande(ws, fila, col, etiqueta, formula, color, formato=None):
 
 
 # =============================================================================
+# DATOS DE EJEMPLO (10 trabajos para validar que los KPIs reflejan datos reales)
+# =============================================================================
+def _insertar_datos_ejemplo(wb):
+    """
+    Inserta 10 trabajos de ejemplo directamente en la hoja TRABAJOS para que
+    los KPIs y gráficas muestren valores reales al abrir el archivo.
+
+    Se escriben SOLO las columnas editables (B,C,D,E,F,G,H,I,K,N,P,Q).
+    Las columnas con fórmula (A=folio, J=anticipo50%, L=saldo, R=pago) se
+    calculan automáticamente por las fórmulas de la V4.
+
+    NO modifica la estructura, fórmulas ni protección de TRABAJOS.
+    """
+    ws = wb["TRABAJOS"]
+
+    hoy = date.today()
+
+    # (fecha, cliente, tipo, descripcion, cant, trae_diseno, costo_diseno,
+    #  total, anticipo_recibido, fecha_compromiso, prioridad, status)
+    ejemplos = [
+        (hoy - timedelta(days=35), "Comercial López", "Lona", "Lona 3x2m evento",
+         2, "No", 500, 4500, 2250, hoy - timedelta(days=28), "Alta", "Entregado"),
+        (hoy - timedelta(days=30), "Restaurante El Sol", "Menú", "Menús plastificados",
+         100, "Sí", 0, 3200, 3200, hoy - timedelta(days=20), "Media", "Entregado"),
+        (hoy - timedelta(days=25), "Gym Power", "Vinil", "Vinil decorativo 5m",
+         1, "No", 800, 6000, 3000, hoy - timedelta(days=15), "Alta", "Entregado"),
+        (hoy - timedelta(days=20), "Farmacia Vida", "Tarjetas", "Tarjetas de presentación",
+         500, "Sí", 0, 1800, 900, hoy - timedelta(days=10), "Baja", "Listo para entrega"),
+        (hoy - timedelta(days=15), "Café Aroma", "Banner", "Banner roll up",
+         3, "No", 600, 3500, 1750, hoy - timedelta(days=5), "Media", "Listo para entrega"),
+        (hoy - timedelta(days=12), "Escuela Patria", "Folleto", "Folletos trípticos",
+         200, "Sí", 0, 2800, 1400, hoy - timedelta(days=2), "Alta", "En producción"),
+        (hoy - timedelta(days=10), "Taller Mecánico JR", "Lona", "Lona fachada 4x3",
+         1, "No", 700, 5500, 2750, hoy - timedelta(days=1), "Prioritaria", "En producción"),
+        (hoy - timedelta(days=7), "Boutique María", "Etiqueta", "Etiquetas adhesivas",
+         1000, "No", 400, 2200, 1100, hoy + timedelta(days=3), "Media", "En diseño"),
+        (hoy - timedelta(days=5), "Notaría 12", "Folder", "Folders corporativos",
+         300, "Sí", 0, 4000, 2000, hoy + timedelta(days=7), "Alta", "Pendiente"),
+        (hoy - timedelta(days=2), "Club Deportivo", "Poster", "Posters A2 evento",
+         50, "No", 350, 1500, 750, hoy + timedelta(days=10), "Media", "Pendiente"),
+    ]
+
+    for i, datos in enumerate(ejemplos):
+        fila = FI + i  # filas 3, 4, 5, ... 12
+        (fecha, cliente, tipo, desc, cant, diseno, costo_d,
+         total, anticipo, fecha_comp, prioridad, status) = datos
+
+        ws.cell(row=fila, column=2, value=fecha)       # B: Fecha Pedido
+        ws.cell(row=fila, column=3, value=cliente)     # C: Cliente
+        ws.cell(row=fila, column=4, value=tipo)        # D: Tipo Trabajo
+        ws.cell(row=fila, column=5, value=desc)        # E: Descripción
+        ws.cell(row=fila, column=6, value=cant)        # F: Cantidad
+        ws.cell(row=fila, column=7, value=diseno)      # G: ¿Trae Diseño?
+        ws.cell(row=fila, column=8, value=costo_d)     # H: Costo Diseño
+        ws.cell(row=fila, column=9, value=total)       # I: Total Trabajo
+        ws.cell(row=fila, column=11, value=anticipo)   # K: Anticipo Recibido
+        ws.cell(row=fila, column=14, value=fecha_comp) # N: Fecha Compromiso
+        ws.cell(row=fila, column=16, value=prioridad)  # P: Prioridad
+        ws.cell(row=fila, column=17, value=status)     # Q: Status
+
+        # Formato de fecha para las columnas B y N.
+        ws.cell(row=fila, column=2).number_format = "dd/mm/yyyy"
+        ws.cell(row=fila, column=14).number_format = "dd/mm/yyyy"
+
+
+# =============================================================================
 # HOJA OCULTA: AUX_DASHBOARD (tablas que alimentan gráficas)
 # =============================================================================
 def construir_aux_dashboard(wb):
@@ -136,8 +204,8 @@ def construir_aux_dashboard(wb):
     Crea AUX_DASHBOARD (oculta) con las tablas auxiliares:
         A1:B7   → Status (conteo por estado)
         A10:B12 → Cobranza (Liquidado / Por cobrar)
-        A15:E21 → Ventas por semana (6 semanas, con col E = pico)
-        A24:D30 → Ventas por mes (6 meses)
+        A15:D21 → Ventas por semana (6 semanas): A=label B=Ventas C=Inicio D=Fin
+        A24:D30 → Ventas por mes (6 meses): A=label B=Ventas C=Inicio D=Fin
     """
     aux = wb.create_sheet("AUX_DASHBOARD")
 
@@ -158,7 +226,7 @@ def construir_aux_dashboard(wb):
     aux["B12"] = f'=COUNTIF(TRABAJOS!R{FI}:R{FF},"No")'
 
     # --- Ventas por semana (últimas 6) ---
-    # A=Semana(label) B=Ventas C=Inicio D=Fin E=Pico
+    # A=Semana(label) B=Ventas C=Inicio D=Fin E=Pico (solo para marcador rojo)
     aux["A15"] = "Semana"
     aux["B15"] = "Ventas"
     aux["C15"] = "Inicio"
@@ -175,6 +243,7 @@ def construir_aux_dashboard(wb):
                  value=(f'=SUMIFS(TRABAJOS!$I${FI}:$I${FF},'
                         f'TRABAJOS!$B${FI}:$B${FF},">="&C{r},'
                         f'TRABAJOS!$B${FI}:$B${FF},"<="&D{r})'))
+        # Pico: solo el valor de la semana con mayor venta; el resto NA().
         aux.cell(row=r, column=5,
                  value=(f'=IF(AND(B{r}=MAX($B${s_ini}:$B${s_fin}),B{r}>0),'
                         f'B{r},NA())'))
@@ -212,11 +281,11 @@ def construir_aux_dashboard(wb):
 def _donut_status(aux, ws, ancla):
     """
     Donut de distribución por status.
-    Etiquetas: porcentaje + nombre de categoría vía leyenda lateral.
+    Etiquetas: SOLO porcentaje. Nombres de categoría en la leyenda.
     Entregado en verde.
     """
     ch = PieChart()
-    ch.style = 26  # estilo limpio de Office
+    ch.style = 26
     ch.title = "Distribución por Status"
     ch.width = 9
     ch.height = 9
@@ -226,11 +295,12 @@ def _donut_status(aux, ws, ancla):
     ch.add_data(datos, titles_from_data=True)
     ch.set_categories(cats)
 
-    # Etiquetas: solo porcentaje (evita encimarse con nombres largos).
+    # Etiquetas: SOLO porcentaje. Sin nombres, sin valores.
     ch.dataLabels = DataLabelList()
     ch.dataLabels.showPercent = True
     ch.dataLabels.showVal = False
     ch.dataLabels.showCatName = False
+    ch.dataLabels.showSerName = False
 
     # Colores por sector (Entregado = verde).
     _colorear_puntos(ch.series[0], STATUS_COLORS)
@@ -241,7 +311,7 @@ def _donut_status(aux, ws, ancla):
 def _donut_cobranza(aux, ws, ancla):
     """
     Donut de cobranza: Liquidado (verde) vs Por cobrar (rojo).
-    Etiquetas: valor + porcentaje (solo 2 sectores, no se enciman).
+    Etiquetas: SOLO nombre + porcentaje. Sin valores numéricos duplicados.
     """
     ch = PieChart()
     ch.style = 26
@@ -254,11 +324,12 @@ def _donut_cobranza(aux, ws, ancla):
     ch.add_data(datos, titles_from_data=True)
     ch.set_categories(cats)
 
-    # Solo 2 sectores → valor + porcentaje SIN encimarse.
+    # Etiquetas: nombre + porcentaje. Sin valor numérico (evita duplicar).
     ch.dataLabels = DataLabelList()
-    ch.dataLabels.showVal = True
-    ch.dataLabels.showPercent = True
     ch.dataLabels.showCatName = True
+    ch.dataLabels.showPercent = True
+    ch.dataLabels.showVal = False
+    ch.dataLabels.showSerName = False
 
     _colorear_puntos(ch.series[0], [VERDE, ROJO])
 
@@ -267,7 +338,10 @@ def _donut_cobranza(aux, ws, ancla):
 
 def _linea_semanal(aux, ws, ancla):
     """
-    Línea de ventas por semana con marcador rojo en la mejor semana.
+    Línea de ventas por semana.
+    UNA sola serie visible "Ventas". Semanas como categorías del eje X.
+    Sin etiquetas en los puntos.
+    Segunda serie oculta "Pico" con marcador rojo grande SOLO en la semana top.
     """
     ch = LineChart()
     ch.title = "Ventas por Semana"
@@ -277,42 +351,43 @@ def _linea_semanal(aux, ws, ancla):
     ch.y_axis.title = "Ventas"
     ch.x_axis.title = "Semana"
 
+    # Serie principal: Ventas (col B)
     datos = Reference(aux, min_col=2, min_row=15, max_row=21)
     cats = Reference(aux, min_col=1, min_row=16, max_row=21)
     ch.add_data(datos, titles_from_data=True)
     ch.set_categories(cats)
 
-    # Serie pico (marcador rojo grande en la mejor semana).
+    # Serie pico (col E): marcador rojo grande SOLO en la semana con más ventas.
     pico = Reference(aux, min_col=5, min_row=15, max_row=21)
     ch.add_data(pico, titles_from_data=True)
 
-    # Estilo serie principal.
+    # Estilo serie principal: línea azul, marcadores pequeños, SIN etiquetas.
     s = ch.series[0]
     s.smooth = False
     s.marker = Marker(symbol="circle", size=5)
     s.graphicalProperties = GraphicalProperties()
     s.graphicalProperties.line = LineProperties(solidFill=AZUL_KPI, w=25000)
-    s.dLbls = DataLabelList()
-    s.dLbls.showVal = True
-    s.dLbls.numFmt = '"$"#,##0'
 
-    # Estilo serie pico.
+    # Estilo serie pico: sin línea, solo marcador rojo grande, sin etiquetas.
     sp = ch.series[1]
     sp.smooth = False
     sp.marker = Marker(symbol="circle", size=14)
     sp.marker.graphicalProperties = _solido(NARANJA_ALERTA)
     sp.graphicalProperties = GraphicalProperties()
     sp.graphicalProperties.line = LineProperties(noFill=True)
-    sp.dLbls = DataLabelList()
-    sp.dLbls.showVal = True
-    sp.dLbls.numFmt = '"$"#,##0'
+
+    # Ocultar serie pico de la leyenda: desactivar leyenda completa ya que
+    # la serie principal es la única relevante.
+    ch.legend = None
 
     ws.add_chart(ch, ancla)
 
 
 def _linea_mensual(aux, ws, ancla):
     """
-    Línea de ventas por mes (6 meses) con etiquetas de valor.
+    Línea de ventas por mes.
+    UNA sola serie "Ventas". Meses como categorías del eje X.
+    Sin etiquetas en todos los puntos para mantener limpieza.
     """
     ch = LineChart()
     ch.title = "Ventas por Mes"
@@ -321,20 +396,20 @@ def _linea_mensual(aux, ws, ancla):
     ch.y_axis.numFmt = '"$"#,##0'
     ch.y_axis.title = "Ventas"
     ch.x_axis.title = "Mes"
+    ch.legend = None  # Sin leyenda (una sola serie)
 
+    # Serie única: Ventas
     datos = Reference(aux, min_col=2, min_row=24, max_row=30)
     cats = Reference(aux, min_col=1, min_row=25, max_row=30)
     ch.add_data(datos, titles_from_data=True)
     ch.set_categories(cats)
 
+    # Estilo: línea verde, marcadores diamante, SIN etiquetas de valor.
     s = ch.series[0]
     s.smooth = False
     s.marker = Marker(symbol="diamond", size=6)
     s.graphicalProperties = GraphicalProperties()
     s.graphicalProperties.line = LineProperties(solidFill=VERDE, w=25000)
-    s.dLbls = DataLabelList()
-    s.dLbls.showVal = True
-    s.dLbls.numFmt = '"$"#,##0'
 
     ws.add_chart(ch, ancla)
 
@@ -345,6 +420,7 @@ def _linea_mensual(aux, ws, ancla):
 def construir_dashboard_v41(wb):
     """
     Construye el DASHBOARD ejecutivo + la hoja oculta AUX_DASHBOARD.
+    Distribución visual idéntica a la aprobada.
     """
     ws = wb.create_sheet("DASHBOARD")
     aux = construir_aux_dashboard(wb)
@@ -365,27 +441,24 @@ def construir_dashboard_v41(wb):
     c.alignment = Alignment(horizontal="center", vertical="center")
     ws.row_dimensions[1].height = 36
 
-    # Fila 2: separador visual (fondo gris claro, vacío).
+    # Fila 2: separador visual (vacío).
     ws.row_dimensions[2].height = 6
 
     # =========================================================================
     # ZONA A — 4 KPIs GRANDES (filas 3-4)
-    # Responden: ¿Cuánto vendimos? ¿Cuánto falta por cobrar?
-    #            ¿Cuántos trabajos están atrasados? ¿Cuántos listos?
     # =========================================================================
 
-    # KPI 1: Ventas totales (pregunta #1)
+    # KPI 1: Ventas totales
     _kpi_grande(ws, 3, 1, "VENTAS TOTALES",
                 f'=SUM(TRABAJOS!I{FI}:I{FF})',
                 AZUL_KPI, DINERO)
 
-    # KPI 2: Pendiente de cobro — SUM del saldo real (pregunta #2)
+    # KPI 2: Pendiente de cobro (SUM del saldo pendiente = dinero real)
     _kpi_grande(ws, 3, 5, "PENDIENTE DE COBRO",
                 f'=SUM(TRABAJOS!L{FI}:L{FF})',
                 NARANJA2, DINERO)
 
-    # KPI 3: Atrasados — trabajos vencidos (pregunta #3)
-    # Condiciones: Status <> Entregado, <> Cancelado, Fecha Compromiso < HOY.
+    # KPI 3: Atrasados (excluye Entregado y Cancelado, Fecha Compromiso < HOY)
     _kpi_grande(ws, 3, 9, "ATRASADOS",
                 (f'=COUNTIFS(TRABAJOS!Q{FI}:Q{FF},"<>Entregado",'
                  f'TRABAJOS!Q{FI}:Q{FF},"<>Cancelado",'
@@ -393,7 +466,7 @@ def construir_dashboard_v41(wb):
                  f'TRABAJOS!N{FI}:N{FF},"<>")'),
                 NARANJA_ALERTA)
 
-    # KPI 4: Listos para entregar (pregunta #4)
+    # KPI 4: Listos para entregar
     _kpi_grande(ws, 3, 12, "LISTOS P/ENTREGAR",
                 f'=COUNTIF(TRABAJOS!Q{FI}:Q{FF},"Listo para entrega")',
                 VERDE)
@@ -403,10 +476,8 @@ def construir_dashboard_v41(wb):
 
     # =========================================================================
     # ZONA B — 2 DONUTS (filas 6-22)
-    # Responden: ¿Cómo se distribuyen los trabajos? ¿Qué % está liquidado?
     # =========================================================================
 
-    # Subtítulo.
     ws.merge_cells("A6:N6")
     st = ws["A6"]
     st.value = "DISTRIBUCIÓN OPERATIVA"
@@ -414,14 +485,11 @@ def construir_dashboard_v41(wb):
     st.alignment = Alignment(horizontal="left", vertical="center", indent=1)
     ws.row_dimensions[6].height = 20
 
-    # Donut Status (pregunta #5) → ancla A8, ocupa ~filas 8-22 aprox.
     _donut_status(aux, ws, "A8")
-    # Donut Cobranza (pregunta #6) → ancla H8
     _donut_cobranza(aux, ws, "H8")
 
     # =========================================================================
     # ZONA C — 2 LÍNEAS DE TENDENCIA (filas 24-40)
-    # Responden: ¿Mejor semana? ¿Tendencia mensual?
     # =========================================================================
 
     ws.merge_cells("A24:N24")
@@ -431,9 +499,7 @@ def construir_dashboard_v41(wb):
     st2.alignment = Alignment(horizontal="left", vertical="center", indent=1)
     ws.row_dimensions[24].height = 20
 
-    # Línea semanal (pregunta #7) → ancla A26
     _linea_semanal(aux, ws, "A26")
-    # Línea mensual (pregunta #8) → ancla H26
     _linea_mensual(aux, ws, "H26")
 
     # Proteger la hoja.
@@ -449,13 +515,27 @@ def crear_control_operativo_v41():
         - TRABAJOS, PAGOS, DATOS_EMPRESA → V4 estable (sin modificar)
         - DASHBOARD → rediseño V4.1
         - AUX_DASHBOARD → hoja oculta de soporte
+        - 10 datos de ejemplo para validar KPIs
     """
     wb = Workbook()
+
+    # Forzar recálculo completo de fórmulas al abrir el archivo.
+    # Sin esto, Excel puede mostrar 0 en KPIs que leen de otras hojas.
+    # fullCalcOnLoad: recalcula TODAS las fórmulas al abrir.
+    # calcMode="auto": mantiene recálculo automático activo.
+    # calcId alto: invalida la caché de Excel y fuerza recálculo completo.
+    wb.calculation = CalcProperties(
+        fullCalcOnLoad=True, calcMode="auto", calcId=999999
+    )
 
     v4.construir_trabajos(wb)        # TRABAJOS intacta
     v4.construir_pagos(wb)           # PAGOS intacta
     construir_dashboard_v41(wb)      # DASHBOARD nuevo + AUX_DASHBOARD oculta
     v4.construir_datos_empresa(wb)   # DATOS_EMPRESA intacta
+
+    # Insertar 10 trabajos de ejemplo DESPUÉS de construir la estructura
+    # para que los KPIs reflejen datos reales al abrir el archivo.
+    _insertar_datos_ejemplo(wb)
 
     ruta = "FullColor_Control_Operativo_V4_1_Dashboard.xlsx"
     wb.save(ruta)
@@ -467,6 +547,7 @@ def crear_control_operativo_v41():
     print(f"  Hojas visibles   : TRABAJOS, PAGOS, DASHBOARD, DATOS_EMPRESA")
     print(f"  Hoja oculta      : AUX_DASHBOARD")
     print(f"  Filas operativas : {v4.TOTAL_FILAS}")
+    print(f"  Datos de ejemplo : 10 trabajos precargados")
     print("=" * 60)
 
 
