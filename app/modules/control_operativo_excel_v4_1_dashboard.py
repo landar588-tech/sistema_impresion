@@ -2,21 +2,23 @@
 """
 control_operativo_excel_v4_1_dashboard.py
 ===============================================================================
-FullColor · CONTROL OPERATIVO — V4.1 (rediseño SOLO del DASHBOARD)
+FullColor · CONTROL OPERATIVO — V4.1 Dashboard (orientado a decisiones)
 -------------------------------------------------------------------------------
-Este script NO modifica ni reemplaza la V4 estable. Reutiliza por import los
-constructores estables de `control_operativo_excel_v4.py`:
+Dashboard ejecutivo diseñado para responder 8 preguntas de negocio en < 15 seg.
 
-    - construir_trabajos       -> hoja TRABAJOS  (folios FC, validaciones,
-                                  protección y TODAS las fórmulas intactas)
-    - construir_pagos          -> hoja PAGOS     (intacta)
-    - construir_datos_empresa  -> hoja DATOS_EMPRESA (intacta)
+Estructura visual (3 zonas, 3 niveles de lectura):
+    ZONA A  → 4 KPIs grandes (ventas, pendiente de cobro, atrasados, listos)
+    ZONA B  → 2 donuts (distribución por status + cobranza)
+    ZONA C  → 2 líneas de tendencia (ventas por semana + por mes)
 
-y SOLO redefine la hoja DASHBOARD con un diseño ejecutivo, limpio y colorido.
-Las tablas auxiliares que alimentan las gráficas se colocan en una hoja
-OCULTA llamada AUX_DASHBOARD (no se muestran en DASHBOARD).
+Tablas auxiliares en hoja oculta AUX_DASHBOARD (no visibles en DASHBOARD).
 
-Ejecución (Windows), desde la raíz del proyecto:
+NO modifica la V4 estable. Reutiliza por import:
+    - construir_trabajos       → TRABAJOS intacta
+    - construir_pagos          → PAGOS intacta
+    - construir_datos_empresa  → DATOS_EMPRESA intacta
+
+Ejecución (Windows):
     py app\\modules\\control_operativo_excel_v4_1_dashboard.py
 
 Salida:
@@ -25,162 +27,146 @@ Salida:
 """
 
 from openpyxl import Workbook
-from openpyxl.styles import Font, PatternFill, Alignment
-from openpyxl.chart import BarChart, PieChart, LineChart, Reference
+from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+from openpyxl.chart import PieChart, LineChart, Reference
 from openpyxl.chart.series import DataPoint
 from openpyxl.chart.label import DataLabelList
 from openpyxl.chart.marker import Marker
 from openpyxl.chart.shapes import GraphicalProperties
 from openpyxl.drawing.line import LineProperties
+from openpyxl.utils import get_column_letter
 
-# Reutilizamos la V4 estable SIN modificarla. Al ejecutar este archivo con
-# `py app\modules\...py`, la carpeta app/modules queda en sys.path, por lo que
-# el import directo del módulo hermano funciona.
+# Reutilizamos la V4 estable sin modificarla.
 import control_operativo_excel_v4 as v4
 
-# Atajos a constantes de negocio de la V4 (rango operativo de TRABAJOS).
+# Constantes de rango operativo (heredadas de V4).
 FI = v4.FILA_INICIO   # 3
 FF = v4.FILA_FIN      # 202
 DINERO = '"$"#,##0.00'
 
-# ---------------------------------------------------------------------------
-# Paleta del dashboard (clara, diferenciada y profesional)
-# ---------------------------------------------------------------------------
-AZUL_OSCURO = "1A3A5C"
-AZUL = "2E5F8A"
-AZUL_EST = "4472C4"
-VERDE_HDR = "1E6B3C"
-VERDE_OK = "2E9E5B"   # Entregado / Liquidado
-ROJO = "C00000"       # Por cobrar / Cancelado
-NARANJA = "ED7D31"
-NARANJA2 = "C55A11"
-AMARILLO = "FFC000"
-GRIS = "808080"
-MORADO = "7030A0"
-MAGENTA = "B4009E"
+# =============================================================================
+# PALETA DE COLORES — mínima, intencionada
+# =============================================================================
+AZUL_TITULO = "1A3A5C"     # Título principal y bordes
+AZUL_KPI = "2E5F8A"        # KPI Ventas
+NARANJA_ALERTA = "E74C3C"  # KPI Atrasados (rojo-naranja para generar urgencia)
+VERDE = "27AE60"           # Entregado / Liquidado / KPI Listos
+ROJO = "C0392B"            # Por cobrar
+NARANJA2 = "D35400"        # KPI Pendiente de cobro
+GRIS_STATUS = "95A5A6"     # Pendiente
+AZUL_DISENO = "3498DB"     # En diseño
+NARANJA_PROD = "E67E22"    # En producción
+AMARILLO = "F39C12"        # Listo para entrega
+GRIS_CANCEL = "7F8C8D"     # Cancelado
 BLANCO = "FFFFFF"
-FONDO_VALOR = "F5F9FF"
+FONDO = "F8F9FA"           # Fondo general del dashboard (gris casi blanco)
+FONDO_KPI = "FFFFFF"       # Fondo del valor del KPI
 
-# Colores por estado para la gráfica de Status (Entregado en verde).
-STATUS = ["Pendiente", "En diseño", "En producción",
-          "Listo para entrega", "Entregado", "Cancelado"]
-STATUS_COLORS = [GRIS, AZUL_EST, NARANJA, AMARILLO, VERDE_OK, ROJO]
+# Mapa de colores por sector del donut Status.
+STATUS_LIST = ["Pendiente", "En diseño", "En producción",
+               "Listo para entrega", "Entregado", "Cancelado"]
+STATUS_COLORS = [GRIS_STATUS, AZUL_DISENO, NARANJA_PROD,
+                 AMARILLO, VERDE, GRIS_CANCEL]
 
 
-# ===========================================================================
-# Utilidades visuales del dashboard
-# ===========================================================================
+# =============================================================================
+# UTILIDADES VISUALES (mínimas, sin ruido)
+# =============================================================================
+def _borde(color="D5D8DC"):
+    lado = Side(style="thin", color=color)
+    return Border(left=lado, right=lado, top=lado, bottom=lado)
+
+
 def _solido(color):
     """GraphicalProperties con relleno sólido."""
     return GraphicalProperties(solidFill=color)
 
 
 def _colorear_puntos(serie, colores):
-    """Asigna un color distinto a cada punto/sector de una serie."""
+    """Asigna color a cada sector/punto de una serie de gráfica."""
     for idx, color in enumerate(colores):
         dp = DataPoint(idx=idx)
         dp.graphicalProperties = _solido(color)
         serie.data_points.append(dp)
 
 
-def _banda(ws, fila, texto, color, ncols=14):
-    """Encabezado de sección que abarca todo el ancho del tablero."""
-    ws.merge_cells(start_row=fila, start_column=1, end_row=fila, end_column=ncols)
-    c = ws.cell(row=fila, column=1, value=texto)
-    c.font = Font(name="Arial", bold=True, size=11, color=BLANCO)
-    c.fill = PatternFill("solid", start_color=color)
-    c.alignment = Alignment(horizontal="left", vertical="center", indent=1)
-    ws.row_dimensions[fila].height = 20
-
-
-def _tarjeta(ws, fila, col, titulo, formula, color, span=2, formato=None):
+def _kpi_grande(ws, fila, col, etiqueta, formula, color, formato=None):
     """
-    Tarjeta KPI: rótulo (arriba, con color) + valor grande (abajo).
-    Abarca `span` columnas para un aspecto de 'card' amplio.
+    Tarjeta KPI minimalista de 2 filas × 3 columnas:
+        Fila 1: etiqueta (fondo de color, texto blanco, centrado)
+        Fila 2: valor grande (fondo blanco, texto del color, centrado)
+    Prioriza legibilidad: número GRANDE, etiqueta discreta.
     """
+    span = 3  # columnas que ocupa cada tarjeta
     ultima = col + span - 1
-    ws.merge_cells(start_row=fila, start_column=col, end_row=fila, end_column=ultima)
-    ws.merge_cells(start_row=fila + 1, start_column=col, end_row=fila + 1, end_column=ultima)
 
-    t = ws.cell(row=fila, column=col, value=titulo)
+    ws.merge_cells(start_row=fila, start_column=col,
+                   end_row=fila, end_column=ultima)
+    ws.merge_cells(start_row=fila + 1, start_column=col,
+                   end_row=fila + 1, end_column=ultima)
+
+    # Etiqueta
+    t = ws.cell(row=fila, column=col, value=etiqueta)
     t.font = Font(name="Arial", bold=True, size=9, color=BLANCO)
     t.fill = PatternFill("solid", start_color=color)
-    t.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+    t.alignment = Alignment(horizontal="center", vertical="center")
 
+    # Valor
     v = ws.cell(row=fila + 1, column=col, value=formula)
-    v.font = Font(name="Arial", bold=True, size=16, color=color)
-    v.fill = PatternFill("solid", start_color=FONDO_VALOR)
+    v.font = Font(name="Arial", bold=True, size=20, color=color)
+    v.fill = PatternFill("solid", start_color=FONDO_KPI)
     v.alignment = Alignment(horizontal="center", vertical="center")
     if formato:
         v.number_format = formato
 
-    # Borde envolvente en toda la tarjeta (ambas filas, todas las columnas).
+    # Bordes suaves en toda la tarjeta.
     for r in (fila, fila + 1):
         for c in range(col, ultima + 1):
-            ws.cell(row=r, column=c).border = v4.borde(color, "medium")
+            ws.cell(row=r, column=c).border = _borde(color)
 
-    ws.row_dimensions[fila].height = 16
-    ws.row_dimensions[fila + 1].height = 30
+    ws.row_dimensions[fila].height = 18
+    ws.row_dimensions[fila + 1].height = 36
 
 
-# ===========================================================================
-# Hoja oculta AUX_DASHBOARD (datos que alimentan las gráficas)
-# ===========================================================================
+# =============================================================================
+# HOJA OCULTA: AUX_DASHBOARD (tablas que alimentan gráficas)
+# =============================================================================
 def construir_aux_dashboard(wb):
     """
-    Crea la hoja AUX_DASHBOARD (oculta) con las tablas auxiliares.
-    Distribución en columnas A..E:
-        Status        -> A1:B7
-        Pago Completo -> A10:B12
-        Finanzas      -> A15:B18
-        Ventas semana -> A21:E27   (A=Semana B=Ventas C=Inicio D=Fin E=Pico)
-        Ventas mes    -> A30:D36   (A=Mes    B=Ventas C=Inicio D=Fin)
+    Crea AUX_DASHBOARD (oculta) con las tablas auxiliares:
+        A1:B7   → Status (conteo por estado)
+        A10:B12 → Cobranza (Liquidado / Por cobrar)
+        A15:E21 → Ventas por semana (6 semanas, con col E = pico)
+        A24:D30 → Ventas por mes (6 meses)
     """
     aux = wb.create_sheet("AUX_DASHBOARD")
 
-    def enc(celda, texto):
-        c = aux[celda]
-        c.value = texto
-        c.font = Font(bold=True, color=AZUL_OSCURO, size=9)
-        c.fill = PatternFill("solid", start_color="EBF1F8")
-
-    # --- Status (conteos por estado) ---
-    enc("A1", "Status")
-    enc("B1", "Cantidad")
-    for i, estado in enumerate(STATUS, start=2):
+    # --- Status ---
+    aux["A1"] = "Status"
+    aux["B1"] = "Cantidad"
+    for i, estado in enumerate(STATUS_LIST, start=2):
         aux.cell(row=i, column=1, value=estado)
         aux.cell(row=i, column=2,
                  value=f'=COUNTIF(TRABAJOS!Q{FI}:Q{FF},"{estado}")')
 
-    # --- Pago Completo (cuenta R="Sí"/"No"; etiquetas Liquidado/Por cobrar) ---
-    enc("A10", "Pago")
-    enc("B10", "Cantidad")
+    # --- Cobranza (Liquidado / Por cobrar) ---
+    aux["A10"] = "Estado"
+    aux["B10"] = "Cantidad"
     aux["A11"] = "Liquidado"
     aux["B11"] = f'=COUNTIF(TRABAJOS!R{FI}:R{FF},"Sí")'
     aux["A12"] = "Por cobrar"
     aux["B12"] = f'=COUNTIF(TRABAJOS!R{FI}:R{FF},"No")'
 
-    # --- Resumen Financiero ---
-    enc("A15", "Concepto")
-    enc("B15", "Monto")
-    aux["A16"] = "Ventas"
-    aux["B16"] = f'=SUM(TRABAJOS!I{FI}:I{FF})'
-    aux["A17"] = "Anticipos"
-    aux["B17"] = f'=SUM(TRABAJOS!K{FI}:K{FF})'
-    aux["A18"] = "Saldo pendiente"
-    aux["B18"] = f'=SUM(TRABAJOS!L{FI}:L{FF})'
-    for r in (16, 17, 18):
-        aux.cell(row=r, column=2).number_format = DINERO
-
-    # --- Ventas por semana (últimas 6; semana = lunes a domingo) ---
-    enc("A21", "Semana")
-    enc("B21", "Ventas")
-    enc("C21", "Inicio")
-    enc("D21", "Fin")
-    enc("E21", "Pico")
-    s_ini, s_fin = 22, 27
+    # --- Ventas por semana (últimas 6) ---
+    # A=Semana(label) B=Ventas C=Inicio D=Fin E=Pico
+    aux["A15"] = "Semana"
+    aux["B15"] = "Ventas"
+    aux["C15"] = "Inicio"
+    aux["D15"] = "Fin"
+    aux["E15"] = "Pico"
+    s_ini, s_fin = 16, 21
     for r in range(s_ini, s_fin + 1):
-        atras = s_fin - r  # r=27 -> 0 (semana actual)
+        atras = s_fin - r
         aux.cell(row=r, column=3,
                  value=f"=TODAY()-WEEKDAY(TODAY(),2)+1-7*{atras}")
         aux.cell(row=r, column=4, value=f"=C{r}+6")
@@ -189,7 +175,6 @@ def construir_aux_dashboard(wb):
                  value=(f'=SUMIFS(TRABAJOS!$I${FI}:$I${FF},'
                         f'TRABAJOS!$B${FI}:$B${FF},">="&C{r},'
                         f'TRABAJOS!$B${FI}:$B${FF},"<="&D{r})'))
-        # Pico: sólo conserva el máximo (>0); el resto NA() y no se grafica.
         aux.cell(row=r, column=5,
                  value=(f'=IF(AND(B{r}=MAX($B${s_ini}:$B${s_fin}),B{r}>0),'
                         f'B{r},NA())'))
@@ -197,13 +182,14 @@ def construir_aux_dashboard(wb):
         aux.cell(row=r, column=5).number_format = DINERO
 
     # --- Ventas por mes (últimos 6) ---
-    enc("A30", "Mes")
-    enc("B30", "Ventas")
-    enc("C30", "Inicio")
-    enc("D30", "Fin")
-    m_ini, m_fin = 31, 36
+    # A=Mes(label) B=Ventas C=Inicio D=Fin
+    aux["A24"] = "Mes"
+    aux["B24"] = "Ventas"
+    aux["C24"] = "Inicio"
+    aux["D24"] = "Fin"
+    m_ini, m_fin = 25, 30
     for r in range(m_ini, m_fin + 1):
-        atras = m_fin - r  # r=36 -> 0 (mes actual)
+        atras = m_fin - r
         aux.cell(row=r, column=3,
                  value=f"=DATE(YEAR(TODAY()),MONTH(TODAY())-{atras},1)")
         aux.cell(row=r, column=4, value=f"=EOMONTH(C{r},0)")
@@ -214,205 +200,274 @@ def construir_aux_dashboard(wb):
                         f'TRABAJOS!$B${FI}:$B${FF},"<="&D{r})'))
         aux.cell(row=r, column=2).number_format = DINERO
 
-    # Ocultar y proteger la hoja auxiliar.
+    # Ocultar la hoja.
     aux.sheet_state = "hidden"
     v4.proteger(aux)
     return aux
 
 
-# ===========================================================================
-# Gráficas (todas leen de AUX_DASHBOARD; se anclan en DASHBOARD sin solaparse)
-# ===========================================================================
-def _grafica_status(aux, ws, ancla):
+# =============================================================================
+# GRÁFICAS
+# =============================================================================
+def _donut_status(aux, ws, ancla):
+    """
+    Donut de distribución por status.
+    Etiquetas: porcentaje + nombre de categoría vía leyenda lateral.
+    Entregado en verde.
+    """
     ch = PieChart()
-    ch.title = "Trabajos por Status"
-    ch.width = 7
-    ch.height = 8
-    datos = Reference(aux, min_col=2, min_row=1, max_row=7)   # B1 (título) + B2:B7
+    ch.style = 26  # estilo limpio de Office
+    ch.title = "Distribución por Status"
+    ch.width = 9
+    ch.height = 9
+
+    datos = Reference(aux, min_col=2, min_row=1, max_row=7)
     cats = Reference(aux, min_col=1, min_row=2, max_row=7)
     ch.add_data(datos, titles_from_data=True)
     ch.set_categories(cats)
+
+    # Etiquetas: solo porcentaje (evita encimarse con nombres largos).
     ch.dataLabels = DataLabelList()
-    ch.dataLabels.showVal = True
     ch.dataLabels.showPercent = True
-    _colorear_puntos(ch.series[0], STATUS_COLORS)  # Entregado en verde
+    ch.dataLabels.showVal = False
+    ch.dataLabels.showCatName = False
+
+    # Colores por sector (Entregado = verde).
+    _colorear_puntos(ch.series[0], STATUS_COLORS)
+
     ws.add_chart(ch, ancla)
 
 
-def _grafica_pago(aux, ws, ancla):
+def _donut_cobranza(aux, ws, ancla):
+    """
+    Donut de cobranza: Liquidado (verde) vs Por cobrar (rojo).
+    Etiquetas: valor + porcentaje (solo 2 sectores, no se enciman).
+    """
     ch = PieChart()
-    ch.title = "Pago Completo"
-    ch.width = 7
-    ch.height = 8
-    datos = Reference(aux, min_col=2, min_row=10, max_row=12)  # B10 + B11:B12
+    ch.style = 26
+    ch.title = "Cobranza"
+    ch.width = 9
+    ch.height = 9
+
+    datos = Reference(aux, min_col=2, min_row=10, max_row=12)
     cats = Reference(aux, min_col=1, min_row=11, max_row=12)
     ch.add_data(datos, titles_from_data=True)
     ch.set_categories(cats)
+
+    # Solo 2 sectores → valor + porcentaje SIN encimarse.
     ch.dataLabels = DataLabelList()
     ch.dataLabels.showVal = True
     ch.dataLabels.showPercent = True
-    _colorear_puntos(ch.series[0], [VERDE_OK, ROJO])  # Liquidado verde / Por cobrar rojo
+    ch.dataLabels.showCatName = True
+
+    _colorear_puntos(ch.series[0], [VERDE, ROJO])
+
     ws.add_chart(ch, ancla)
 
 
-def _grafica_finanzas(aux, ws, ancla):
-    ch = BarChart()
-    ch.type = "col"
-    ch.title = "Resumen Financiero"
-    ch.width = 7
-    ch.height = 8
-    datos = Reference(aux, min_col=2, min_row=15, max_row=18)  # B15 + B16:B18
-    cats = Reference(aux, min_col=1, min_row=16, max_row=18)
-    ch.add_data(datos, titles_from_data=True)
-    ch.set_categories(cats)
-    ch.legend = None
-    ch.dataLabels = DataLabelList()
-    ch.dataLabels.showVal = True
-    ch.dataLabels.numFmt = '"$"#,##0'
-    ch.y_axis.numFmt = '"$"#,##0'
-    ch.y_axis.title = "Monto"
-    _colorear_puntos(ch.series[0], [AZUL, VERDE_OK, NARANJA])  # Ventas/Anticipos/Saldo
-    ws.add_chart(ch, ancla)
-
-
-def _grafica_linea(aux, ws, titulo, ancla, hdr, primero, ultimo,
-                   color=AZUL, pico_col=None):
+def _linea_semanal(aux, ws, ancla):
+    """
+    Línea de ventas por semana con marcador rojo en la mejor semana.
+    """
     ch = LineChart()
-    ch.title = titulo
-    ch.width = 9.5
+    ch.title = "Ventas por Semana"
+    ch.width = 9
     ch.height = 8
-    datos = Reference(aux, min_col=2, min_row=hdr, max_row=ultimo)
-    cats = Reference(aux, min_col=1, min_row=primero, max_row=ultimo)
+    ch.y_axis.numFmt = '"$"#,##0'
+    ch.y_axis.title = "Ventas"
+    ch.x_axis.title = "Semana"
+
+    datos = Reference(aux, min_col=2, min_row=15, max_row=21)
+    cats = Reference(aux, min_col=1, min_row=16, max_row=21)
     ch.add_data(datos, titles_from_data=True)
     ch.set_categories(cats)
-    ch.y_axis.numFmt = '"$"#,##0'
-    ch.y_axis.title = "Ventas ($)"
-    ch.x_axis.delete = False
-    ch.y_axis.delete = False
 
+    # Serie pico (marcador rojo grande en la mejor semana).
+    pico = Reference(aux, min_col=5, min_row=15, max_row=21)
+    ch.add_data(pico, titles_from_data=True)
+
+    # Estilo serie principal.
     s = ch.series[0]
     s.smooth = False
-    s.marker = Marker(symbol="circle", size=6)
+    s.marker = Marker(symbol="circle", size=5)
     s.graphicalProperties = GraphicalProperties()
-    s.graphicalProperties.line = LineProperties(solidFill=color, w=22000)
+    s.graphicalProperties.line = LineProperties(solidFill=AZUL_KPI, w=25000)
     s.dLbls = DataLabelList()
     s.dLbls.showVal = True
     s.dLbls.numFmt = '"$"#,##0'
 
-    # Serie "Pico" (opcional): marca la semana de mayores ventas en rojo.
-    if pico_col:
-        pico = Reference(aux, min_col=pico_col, min_row=hdr, max_row=ultimo)
-        ch.add_data(pico, titles_from_data=True)
-        sp = ch.series[1]
-        sp.smooth = False
-        sp.marker = Marker(symbol="circle", size=12)
-        sp.marker.graphicalProperties = _solido("FF0000")
-        sp.graphicalProperties = GraphicalProperties()
-        sp.graphicalProperties.line = LineProperties(noFill=True)
-        sp.dLbls = DataLabelList()
-        sp.dLbls.showVal = True
+    # Estilo serie pico.
+    sp = ch.series[1]
+    sp.smooth = False
+    sp.marker = Marker(symbol="circle", size=14)
+    sp.marker.graphicalProperties = _solido(NARANJA_ALERTA)
+    sp.graphicalProperties = GraphicalProperties()
+    sp.graphicalProperties.line = LineProperties(noFill=True)
+    sp.dLbls = DataLabelList()
+    sp.dLbls.showVal = True
+    sp.dLbls.numFmt = '"$"#,##0'
 
     ws.add_chart(ch, ancla)
 
 
-# ===========================================================================
-# Hoja DASHBOARD (rediseño ejecutivo)
-# ===========================================================================
+def _linea_mensual(aux, ws, ancla):
+    """
+    Línea de ventas por mes (6 meses) con etiquetas de valor.
+    """
+    ch = LineChart()
+    ch.title = "Ventas por Mes"
+    ch.width = 9
+    ch.height = 8
+    ch.y_axis.numFmt = '"$"#,##0'
+    ch.y_axis.title = "Ventas"
+    ch.x_axis.title = "Mes"
+
+    datos = Reference(aux, min_col=2, min_row=24, max_row=30)
+    cats = Reference(aux, min_col=1, min_row=25, max_row=30)
+    ch.add_data(datos, titles_from_data=True)
+    ch.set_categories(cats)
+
+    s = ch.series[0]
+    s.smooth = False
+    s.marker = Marker(symbol="diamond", size=6)
+    s.graphicalProperties = GraphicalProperties()
+    s.graphicalProperties.line = LineProperties(solidFill=VERDE, w=25000)
+    s.dLbls = DataLabelList()
+    s.dLbls.showVal = True
+    s.dLbls.numFmt = '"$"#,##0'
+
+    ws.add_chart(ch, ancla)
+
+
+# =============================================================================
+# HOJA DASHBOARD (3 zonas — 3 niveles de lectura)
+# =============================================================================
 def construir_dashboard_v41(wb):
-    """Construye la hoja DASHBOARD nueva + la hoja oculta AUX_DASHBOARD."""
+    """
+    Construye el DASHBOARD ejecutivo + la hoja oculta AUX_DASHBOARD.
+    """
     ws = wb.create_sheet("DASHBOARD")
     aux = construir_aux_dashboard(wb)
 
-    # Lienzo limpio: sin líneas de cuadrícula y columnas uniformes.
+    # --- Configuración del lienzo ---
     ws.sheet_view.showGridLines = False
-    for col in range(1, 15):  # A..N
-        ws.column_dimensions[v4.get_column_letter(col)].width = 11
+    for col in range(1, 15):
+        ws.column_dimensions[get_column_letter(col)].width = 10
 
-    # --- Título principal ---
+    # =========================================================================
+    # TÍTULO
+    # =========================================================================
     ws.merge_cells("A1:N1")
-    ws["A1"] = "FULLCOLOR · DASHBOARD EJECUTIVO"
-    ws["A1"].font = Font(name="Arial", bold=True, size=18, color=BLANCO)
-    ws["A1"].fill = PatternFill("solid", start_color=AZUL_OSCURO)
-    ws["A1"].alignment = Alignment(horizontal="center", vertical="center")
-    ws.row_dimensions[1].height = 38
+    c = ws["A1"]
+    c.value = "FULLCOLOR · DASHBOARD EJECUTIVO"
+    c.font = Font(name="Arial", bold=True, size=16, color=BLANCO)
+    c.fill = PatternFill("solid", start_color=AZUL_TITULO)
+    c.alignment = Alignment(horizontal="center", vertical="center")
+    ws.row_dimensions[1].height = 36
 
-    # Columnas de inicio de cada tarjeta (5 tarjetas, span 2, con hueco).
-    cols = [1, 4, 7, 10, 13]  # A, D, G, J, M
+    # Fila 2: separador visual (fondo gris claro, vacío).
+    ws.row_dimensions[2].height = 6
 
-    # --- Banda 1: KPIs financieros ---
-    _banda(ws, 2, "RESUMEN FINANCIERO", AZUL_OSCURO)
-    fin = [
-        ("Total Ventas",   f'=SUM(TRABAJOS!I{FI}:I{FF})',            AZUL_OSCURO, DINERO),
-        ("Anticipos",      f'=SUM(TRABAJOS!K{FI}:K{FF})',            VERDE_HDR,   DINERO),
-        ("Saldo Pendiente", f'=SUM(TRABAJOS!L{FI}:L{FF})',           NARANJA2,    DINERO),
-        ("Liquidados",     f'=COUNTIF(TRABAJOS!R{FI}:R{FF},"Sí")',   VERDE_OK,    None),
-        ("Por Cobrar",     f'=COUNTIF(TRABAJOS!R{FI}:R{FF},"No")',   ROJO,        None),
-    ]
-    for c, (titulo, formula, color, fmt) in zip(cols, fin):
-        _tarjeta(ws, 3, c, titulo, formula, color, span=2, formato=fmt)
+    # =========================================================================
+    # ZONA A — 4 KPIs GRANDES (filas 3-4)
+    # Responden: ¿Cuánto vendimos? ¿Cuánto falta por cobrar?
+    #            ¿Cuántos trabajos están atrasados? ¿Cuántos listos?
+    # =========================================================================
 
-    # --- Banda 2: KPIs de producción ---
-    _banda(ws, 6, "ESTADO DE PRODUCCIÓN", AZUL)
-    prod = [
-        ("Pendientes",    f'=COUNTIF(TRABAJOS!Q{FI}:Q{FF},"Pendiente")',          GRIS),
-        ("En Diseño",     f'=COUNTIF(TRABAJOS!Q{FI}:Q{FF},"En diseño")',          AZUL_EST),
-        ("En Producción", f'=COUNTIF(TRABAJOS!Q{FI}:Q{FF},"En producción")',      NARANJA),
-        ("Listos",        f'=COUNTIF(TRABAJOS!Q{FI}:Q{FF},"Listo para entrega")', AMARILLO),
-        ("Entregados",    f'=COUNTIF(TRABAJOS!Q{FI}:Q{FF},"Entregado")',          VERDE_OK),
-    ]
-    for c, (titulo, formula, color) in zip(cols, prod):
-        _tarjeta(ws, 7, c, titulo, formula, color, span=2)
+    # KPI 1: Ventas totales (pregunta #1)
+    _kpi_grande(ws, 3, 1, "VENTAS TOTALES",
+                f'=SUM(TRABAJOS!I{FI}:I{FF})',
+                AZUL_KPI, DINERO)
 
-    # --- Banda 3: KPIs de diseño y prioridades ---
-    _banda(ws, 10, "DISEÑO Y PRIORIDADES", MORADO)
-    dis = [
-        ("Trae Diseño",    f'=COUNTIF(TRABAJOS!G{FI}:G{FF},"Sí")',         MORADO),
-        ("Requiere Diseño", f'=COUNTIF(TRABAJOS!G{FI}:G{FF},"No")',        MAGENTA),
-        ("Prioritarios",   f'=COUNTIF(TRABAJOS!P{FI}:P{FF},"Prioritaria")', NARANJA2),
-        ("Alta Prioridad", f'=COUNTIF(TRABAJOS!P{FI}:P{FF},"Alta")',       NARANJA),
-        ("Total Trabajos", f'=COUNTIF(TRABAJOS!B{FI}:B{FF},"<>")',         AZUL_OSCURO),
-    ]
-    for c, (titulo, formula, color) in zip(cols, dis):
-        _tarjeta(ws, 11, c, titulo, formula, color, span=2)
+    # KPI 2: Pendiente de cobro — SUM del saldo real (pregunta #2)
+    _kpi_grande(ws, 3, 5, "PENDIENTE DE COBRO",
+                f'=SUM(TRABAJOS!L{FI}:L{FF})',
+                NARANJA2, DINERO)
 
-    # --- Banda 4: tres gráficas alineadas horizontalmente ---
-    _banda(ws, 13, "INDICADORES VISUALES", AZUL_OSCURO)
-    _grafica_status(aux, ws, "A15")
-    _grafica_pago(aux, ws, "F15")
-    _grafica_finanzas(aux, ws, "K15")
+    # KPI 3: Atrasados — trabajos vencidos (pregunta #3)
+    # Condiciones: Status <> Entregado, <> Cancelado, Fecha Compromiso < HOY.
+    _kpi_grande(ws, 3, 9, "ATRASADOS",
+                (f'=COUNTIFS(TRABAJOS!Q{FI}:Q{FF},"<>Entregado",'
+                 f'TRABAJOS!Q{FI}:Q{FF},"<>Cancelado",'
+                 f'TRABAJOS!N{FI}:N{FF},"<"&TODAY(),'
+                 f'TRABAJOS!N{FI}:N{FF},"<>")'),
+                NARANJA_ALERTA)
 
-    # --- Banda 5: tendencia de ventas (semana y mes) ---
-    _banda(ws, 32, "TENDENCIA DE VENTAS", VERDE_HDR)
-    _grafica_linea(aux, ws, "Ventas por Semana (últimas 6)", "A34",
-                   hdr=21, primero=22, ultimo=27, color=AZUL, pico_col=5)
-    _grafica_linea(aux, ws, "Ventas por Mes (últimos 6)", "H34",
-                   hdr=30, primero=31, ultimo=36, color=VERDE_HDR)
+    # KPI 4: Listos para entregar (pregunta #4)
+    _kpi_grande(ws, 3, 12, "LISTOS P/ENTREGAR",
+                f'=COUNTIF(TRABAJOS!Q{FI}:Q{FF},"Listo para entrega")',
+                VERDE)
 
-    # Protegemos la hoja (sólo lectura, como el resto del libro).
+    # Separador.
+    ws.row_dimensions[5].height = 10
+
+    # =========================================================================
+    # ZONA B — 2 DONUTS (filas 6-22)
+    # Responden: ¿Cómo se distribuyen los trabajos? ¿Qué % está liquidado?
+    # =========================================================================
+
+    # Subtítulo.
+    ws.merge_cells("A6:N6")
+    st = ws["A6"]
+    st.value = "DISTRIBUCIÓN OPERATIVA"
+    st.font = Font(name="Arial", bold=True, size=10, color=AZUL_TITULO)
+    st.alignment = Alignment(horizontal="left", vertical="center", indent=1)
+    ws.row_dimensions[6].height = 20
+
+    # Donut Status (pregunta #5) → ancla A8, ocupa ~filas 8-22 aprox.
+    _donut_status(aux, ws, "A8")
+    # Donut Cobranza (pregunta #6) → ancla H8
+    _donut_cobranza(aux, ws, "H8")
+
+    # =========================================================================
+    # ZONA C — 2 LÍNEAS DE TENDENCIA (filas 24-40)
+    # Responden: ¿Mejor semana? ¿Tendencia mensual?
+    # =========================================================================
+
+    ws.merge_cells("A24:N24")
+    st2 = ws["A24"]
+    st2.value = "TENDENCIA DE VENTAS"
+    st2.font = Font(name="Arial", bold=True, size=10, color=AZUL_TITULO)
+    st2.alignment = Alignment(horizontal="left", vertical="center", indent=1)
+    ws.row_dimensions[24].height = 20
+
+    # Línea semanal (pregunta #7) → ancla A26
+    _linea_semanal(aux, ws, "A26")
+    # Línea mensual (pregunta #8) → ancla H26
+    _linea_mensual(aux, ws, "H26")
+
+    # Proteger la hoja.
     v4.proteger(ws)
 
 
-# ===========================================================================
-# Orquestador
-# ===========================================================================
+# =============================================================================
+# ORQUESTADOR
+# =============================================================================
 def crear_control_operativo_v41():
     """
-    Genera el libro completo reutilizando la V4 estable para TRABAJOS, PAGOS y
-    DATOS_EMPRESA, y aplicando el DASHBOARD rediseñado.
+    Genera el libro completo:
+        - TRABAJOS, PAGOS, DATOS_EMPRESA → V4 estable (sin modificar)
+        - DASHBOARD → rediseño V4.1
+        - AUX_DASHBOARD → hoja oculta de soporte
     """
     wb = Workbook()
 
-    v4.construir_trabajos(wb)        # TRABAJOS (intacta)
-    v4.construir_pagos(wb)           # PAGOS (intacta)
+    v4.construir_trabajos(wb)        # TRABAJOS intacta
+    v4.construir_pagos(wb)           # PAGOS intacta
     construir_dashboard_v41(wb)      # DASHBOARD nuevo + AUX_DASHBOARD oculta
-    v4.construir_datos_empresa(wb)   # DATOS_EMPRESA (intacta)
+    v4.construir_datos_empresa(wb)   # DATOS_EMPRESA intacta
 
     ruta = "FullColor_Control_Operativo_V4_1_Dashboard.xlsx"
     wb.save(ruta)
 
-    print("✅ Archivo guardado:", ruta)
-    print("📋 Hojas creadas:", wb.sheetnames)
-    print("🙈 Hoja auxiliar oculta:", "AUX_DASHBOARD")
+    print("=" * 60)
+    print("  FullColor · Control Operativo V4.1 Dashboard")
+    print("=" * 60)
+    print(f"  Archivo guardado : {ruta}")
+    print(f"  Hojas visibles   : TRABAJOS, PAGOS, DASHBOARD, DATOS_EMPRESA")
+    print(f"  Hoja oculta      : AUX_DASHBOARD")
+    print(f"  Filas operativas : {v4.TOTAL_FILAS}")
+    print("=" * 60)
 
 
 if __name__ == "__main__":
